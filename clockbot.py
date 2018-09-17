@@ -13,5 +13,5 @@ t2 = time()
 print(t2)
 print(t2-t1)
 
-
+print("Hoi")
 
