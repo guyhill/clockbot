@@ -13,11 +13,13 @@
 #
 import csv
 import sys
+import os
 import math
 import argparse
 from time import time, localtime, sleep, strftime
 
 from selenium import webdriver
+from selenium.common.exceptions import *
 
 # Force csv to write file in Dutch csv format (i.e., use ; as field delimiters).
 # But note that the Python csv standard library does not support commas as decimal separators.
@@ -45,8 +47,9 @@ methods = [
 
 # xpath expression of the items in the menubar
 # TODO: extract the other selectors from the code and list them here
-xpath_menu_items_different = '//*[@id="v"]//table//tr[position() > 1]//a | //*[@id="v"]/tbody/tr/td/div/a'
-
+#xpath_menu_items_different = '//*[@id="v"]//table//tr[position() > 1]//a | //*[@id="v"]/tbody/tr/td/div/a'
+css_menu_items = '#v a'
+log_file = sys.stdout
 
 def parse_arguments():
     """
@@ -56,9 +59,11 @@ def parse_arguments():
     Returns: the arguments, parsed
     """
     parser = argparse.ArgumentParser(description = "Measure how fast questionnaire pages load in different browsers")
+    parser.add_argument(dest = "cred_filename", help = "Filename of credentials file")
     parser.add_argument("-b", dest = "browser", choices = list(browsers.keys()), default = list(browsers.keys())[0], help = "Browser name. Default: %(default)s")
     parser.add_argument("-t", dest = "traversal_method", choices = methods, default = methods[0], help = "Questionnaire traversal method. Default: %(default)s.")
-    parser.add_argument(dest = "cred_fname", help = "Filename of credentials file")
+    parser.add_argument("-o", dest = "output_filename", default = None, help = "Filename of output file. Default: dump to console.")
+    parser.add_argument("-n", dest = "n_runs", type = int, default = 1, help = "Number of runs for each questionnaire. Default: %(default)i.")
     args = parser.parse_args()
 
     return args
@@ -81,10 +86,15 @@ def read_credentials(filename):
     log("Reading credentials complete")
     return result
 
+def log_init(filename):
+    global log_file
+
+    if filename is not None:
+        log_file = open(filename, "w", encoding = "utf-8", buffering = 1)
 
 def log(msg):
     """
-    logs a message to stdout. The message is preceded by human-readable date & time, and timestamp in machine-friendly format.
+    logs a message to the log file. The message is preceded by human-readable date & time, and timestamp in machine-friendly format.
     The data & time on the one hand, and the timestamp on the other, are guaranteed to be the same moment, up to the same
     millisecond
 
@@ -94,7 +104,10 @@ def log(msg):
     lt = localtime(t)
     ms, _ = math.modf(t)
     ms = int(1000 * ms)
-    print(strftime("%Y-%m-%d %H:%M:%S", lt) + "." + "{:03d} {:.6f}".format(ms, t),  msg)
+    log_file.write(strftime("%Y-%m-%d %H:%M:%S", lt) + "." + "{:03d} {:.6f}".format(ms, t) + " " + msg + "\n")
+    log_file.flush()
+    if log_file.fileno() != 1: # don't fsync stdout
+        os.fsync(log_file.fileno())
 
 def click_and_wait(driver, element):
     """
@@ -115,7 +128,15 @@ def click_and_wait(driver, element):
     except:
         cur_contents = ""
 
-    element.click()
+    try:
+        element.click()
+    except (
+        ElementClickInterceptedException, 
+        ElementNotInteractableException, 
+        ElementNotVisibleException):
+
+        log("Element cannot be clicked")
+        return
 
     while True:
         try:
@@ -143,7 +164,7 @@ def startup(browser_name = "firefox"):
         log("Unknown browser: " + browser_name)
         exit(1)
     driver = init()
-    driver.set_window_rect(x=160, y=0, width = 1600, height = 1024)
+    driver.maximize_window()
     log("Startup complete")
     return driver
 
@@ -191,7 +212,7 @@ def navigate_first_menu_item(driver):
     """
     log("Navigating to first menu item")
     click_and_wait(driver, driver.find_element_by_css_selector("#v td p"))
-    log("Navigation to first menu item complete.")
+    log("Navigation complete")
     active_elements = driver.find_elements_by_css_selector("#v .Font12")
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
@@ -210,7 +231,7 @@ def navigate_next(driver):
         log("No next item found")
         return False
     click_and_wait(driver, element)
-    log("Navigation to next menu item complete.")
+    log("Navigation complete")
     active_elements = driver.find_elements_by_css_selector("#v .Font12")
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
@@ -226,7 +247,7 @@ def get_menu_length(driver):
     returns: the number of menu items found
     """
     log("Getting number of menu items")
-    elements = driver.find_elements_by_xpath(xpath_menu_items_different)
+    elements = driver.find_elements_by_css_selector(css_menu_items)
     n_elements = len(elements)
     log ("Found {:d} menu items".format(n_elements))
     return n_elements
@@ -240,9 +261,9 @@ def navigate_nth_menu_item(driver, i):
     i (integer): number of the menu item that is navigated to. This is zero-based, i.e., 0 is the first menu item
     """
     log("Navigating to menu item " + str(i))
-    elements = driver.find_elements_by_xpath(xpath_menu_items_different)
+    elements = driver.find_elements_by_css_selector(css_menu_items)
     click_and_wait(driver, elements[i])
-    log("Navigation to menu item {:d} complete.".format(i))
+    log("Navigation complete")
     active_elements = driver.find_elements_by_css_selector("#v .Font12")
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
@@ -262,44 +283,48 @@ def is_first_item(driver):
     return "Font12" in attr
 
 if __name__ == "__main__":
-    log("Clockbot start")
 
     args = parse_arguments()
+    log_init(args.output_filename)
 
-    creds = read_credentials(args.cred_fname)
+    log("Clockbot start")
+    log("Traversal method: " + args.traversal_method)
+
+    creds = read_credentials(args.cred_filename)
 
     for cred in creds:
-        driver = startup(args.browser)
-        navigate_page(driver, base_url)
-        login(driver, cred["Gebruikersnaam"], cred["Wachtwoord"])
-        if not is_first_item(driver):
-            # We want to process the questionnaire from the 1st page to the last. However,
-            # the system stores the last page visited, so after logging in we may not be on
-            # the first page. If this is the case we navigate to the first page and
-            # restart the browser, to ensure we start at the first page in a fresh browser
-            # environment
-            log("Not on first page.")
-            navigate_first_menu_item(driver)
-            stop(driver)
+        for count in range(args.n_runs):
             driver = startup(args.browser)
             navigate_page(driver, base_url)
             login(driver, cred["Gebruikersnaam"], cred["Wachtwoord"])
-
-        if args.traversal_method == "linear":
-            while navigate_next(driver):
-                pass
-
-        elif args.traversal_method == "index":
-            n = get_menu_length(driver)
-            for i in range(1, n):
-                navigate_nth_menu_item(driver, i)
+            if not is_first_item(driver):
+                # We want to process the questionnaire from the 1st page to the last. However,
+                # the system stores the last page visited, so after logging in we may not be on
+                # the first page. If this is the case we navigate to the first page and
+                # restart the browser, to ensure we start at the first page in a fresh browser
+                # environment
+                log("Not on first page.")
                 navigate_first_menu_item(driver)
-        
-        else:
-            log("Unknown traversal method " + args.traversal_method)
-            log("Quitting")
-            exit(1)
+                stop(driver)
+                driver = startup(args.browser)
+                navigate_page(driver, base_url)
+                login(driver, cred["Gebruikersnaam"], cred["Wachtwoord"])
 
-        stop(driver)
+            if args.traversal_method == "linear":
+                while navigate_next(driver):
+                    pass
+
+            elif args.traversal_method == "index":
+                n = get_menu_length(driver)
+                for i in range(1, n):
+                    navigate_nth_menu_item(driver, i)
+                    navigate_first_menu_item(driver)
+            
+            else:
+                log("Unknown traversal method " + args.traversal_method)
+                log("Quitting")
+                exit(1)
+
+            stop(driver)
 
     log("End")
