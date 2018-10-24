@@ -17,6 +17,8 @@ import os
 import math
 import argparse
 from time import time, localtime, sleep, strftime
+from importlib import import_module
+import json
 
 from selenium import webdriver
 from selenium.common.exceptions import *
@@ -45,10 +47,6 @@ methods = [
     "index"
 ]
 
-# xpath expression of the items in the menubar
-# TODO: extract the other selectors from the code and list them here
-#xpath_menu_items_different = '//*[@id="v"]//table//tr[position() > 1]//a | //*[@id="v"]/tbody/tr/td/div/a'
-css_menu_items = '#v a'
 log_file = sys.stdout
 
 def parse_arguments():
@@ -64,6 +62,7 @@ def parse_arguments():
     parser.add_argument("-t", dest = "traversal_method", choices = methods, default = methods[0], help = "Questionnaire traversal method. Default: %(default)s.")
     parser.add_argument("-o", dest = "output_filename", default = None, help = "Filename of output file. Default: dump to console.")
     parser.add_argument("-n", dest = "n_runs", type = int, default = 1, help = "Number of runs for each questionnaire. Default: %(default)i.")
+    parser.add_argument("-c", dest = "config", default = "ps2", help = "Configuration to use. Default: %(default)s.")
     args = parser.parse_args()
 
     return args
@@ -123,7 +122,7 @@ def click_and_wait(driver, element):
     element: webdriver element instance; element on the web page that is to be clicked
     """
     try:
-        page = driver.find_element_by_css_selector("#x")
+        page = driver.find_element_by_css_selector(css_wait_full_page)
         cur_contents = page.get_attribute("textContent")
     except:
         cur_contents = ""
@@ -140,7 +139,7 @@ def click_and_wait(driver, element):
 
     while True:
         try:
-            page = driver.find_element_by_css_selector("#x")
+            page = driver.find_element_by_css_selector(css_wait_full_page)
             contents = page.get_attribute("textContent")
             if contents != cur_contents:
                 cur_contents = contents
@@ -193,13 +192,13 @@ def login(driver, uname, pwd):
     Enters login details in the current page of the browser associated with driver
     """
     log("Filling in username: " + uname)
-    driver.find_element_by_css_selector("input#Username").send_keys(uname)
+    driver.find_element_by_css_selector(css_username_field).send_keys(uname)
     log("Filling in password: " + pwd)
-    driver.find_element_by_css_selector("input#Password").send_keys(pwd)
+    driver.find_element_by_css_selector(css_password_field).send_keys(pwd)
     log("Pressing login button")
-    click_and_wait(driver, driver.find_element_by_css_selector("input[value='Inloggen']"))
+    click_and_wait(driver, driver.find_element_by_css_selector(css_login_button))
     log("Login complete")
-    active_elements = driver.find_elements_by_css_selector("#v .Font12")
+    active_elements = driver.find_elements_by_css_selector(css_menu_active_font)
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
 
@@ -211,9 +210,9 @@ def navigate_first_menu_item(driver):
     driver: webdriver instance
     """
     log("Navigating to first menu item")
-    click_and_wait(driver, driver.find_element_by_css_selector("#v td p"))
+    click_and_wait(driver, driver.find_element_by_css_selector(css_menu_items))
     log("Navigation complete")
-    active_elements = driver.find_elements_by_css_selector("#v .Font12")
+    active_elements = driver.find_elements_by_css_selector(css_menu_active_font)
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
 
@@ -226,13 +225,13 @@ def navigate_next(driver):
     """
     log("Navigating to next menu item")
     try:
-        element = driver.find_element_by_css_selector("#ac")
+        element = driver.find_element_by_css_selector(css_next_page_button)
     except:
         log("No next item found")
         return False
     click_and_wait(driver, element)
     log("Navigation complete")
-    active_elements = driver.find_elements_by_css_selector("#v .Font12")
+    active_elements = driver.find_elements_by_css_selector(css_menu_active_font)
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
     return True
@@ -264,7 +263,7 @@ def navigate_nth_menu_item(driver, i):
     elements = driver.find_elements_by_css_selector(css_menu_items)
     click_and_wait(driver, elements[i])
     log("Navigation complete")
-    active_elements = driver.find_elements_by_css_selector("#v .Font12")
+    active_elements = driver.find_elements_by_css_selector(css_menu_active_font)
     active_texts = [ element.text for element in active_elements ]
     log("Active item: " + " / ".join(active_texts))
 
@@ -278,14 +277,20 @@ def is_first_item(driver):
 
     returns: True if the current page is the first page of the questionnaire; False otherwise
     """
-    element = driver.find_element_by_xpath("//*[@id='v']/tbody/tr[1]//a")
+    element = driver.find_element_by_css_selector(css_menu_items)
     attr = element.get_attribute("class")
-    return "Font12" in attr
+    return active_font_classname in attr
 
 if __name__ == "__main__":
 
     args = parse_arguments()
+    
+    config_filename = "config-" + args.config + ".py"
+#    with open(config_filename, "r") as f:
+#        config = json.load(f)
+
     log_init(args.output_filename)
+    exec(open(config_filename).read())
 
     log("Clockbot start")
     log("Traversal method: " + args.traversal_method)
