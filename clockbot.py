@@ -135,6 +135,7 @@ def click_and_wait_contents(driver, element):
         ElementNotVisibleException) as e:
 
         log(f"{e}: Element cannot be clicked")
+        driver.save_screenshot("screenshot.png")
         return
 
     while True:
@@ -147,6 +148,57 @@ def click_and_wait_contents(driver, element):
         except:
             pass
         sleep(0.01)
+
+
+def click_and_wait_ie(driver, element):
+    """
+    Clicks the given element, and wait for the page to load. Waiting for page load is a tricky proposition for which no standard
+    method exists that is guaranteed to work in all circumstances. For CBS questionnaires, we have found that the following works,
+    seemingly in all cases: 
+
+    1. Store the text of the questionnaire page
+    2. Click the element
+    3. Repeatedly store the text of the questionnaire page until this text is different from the text stored before clicking
+
+    driver: webdriver instance
+    element: webdriver element instance; element on the web page that is to be clicked
+    """
+    try:
+        page = driver.find_element_by_css_selector(css_wait_full_page)
+        cur_contents = page.get_attribute("textContent")
+    except:
+        cur_contents = ""
+
+    try:
+        element.click()
+    except (
+        ElementClickInterceptedException, 
+        ElementNotInteractableException, 
+        ElementNotVisibleException) as e:
+
+        log(f"{e}: Element cannot be clicked")
+        driver.save_screenshot("screenshot.png")
+        return
+
+    while True:
+        try:
+            page = driver.find_element_by_css_selector(css_wait_full_page)
+            contents = page.get_attribute("textContent")
+            if contents != cur_contents:
+                cur_contents = contents
+                break
+        except:
+            pass
+        sleep(0.01)
+    while True:
+        try:
+            splash = driver.find_element_by_css_selector(".splash-active")
+            #print(f"Splash still found. Visible: {splash.is_displayed()}")
+        except:
+            #print("splash disappeared")
+            break
+        sleep(0.01)
+
 
 def click_and_wait_splash(driver, element):
     """
@@ -263,6 +315,7 @@ def navigate_next(driver):
     driver: webdriver instance. 
     """
     log("Navigating to next menu item")
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     try:
         element = driver.find_element_by_css_selector(css_next_page_button)
     except:
