@@ -108,7 +108,7 @@ def log(msg):
     if log_file.fileno() != 1: # don't fsync stdout
         os.fsync(log_file.fileno())
 
-def click_and_wait(driver, element):
+def click_and_wait_contents(driver, element):
     """
     Clicks the given element, and wait for the page to load. Waiting for page load is a tricky proposition for which no standard
     method exists that is guaranteed to work in all circumstances. For CBS questionnaires, we have found that the following works,
@@ -132,9 +132,9 @@ def click_and_wait(driver, element):
     except (
         ElementClickInterceptedException, 
         ElementNotInteractableException, 
-        ElementNotVisibleException):
+        ElementNotVisibleException) as e:
 
-        log("Element cannot be clicked")
+        log(f"{e}: Element cannot be clicked")
         return
 
     while True:
@@ -147,6 +147,45 @@ def click_and_wait(driver, element):
         except:
             pass
         sleep(0.01)
+
+def click_and_wait_splash(driver, element):
+    """
+    Necessary for Blaise 5.5.8. In that Blaise version the "splash screen" (blank screen with progress bar)
+    stays visible on top of the page contents for a few tenths of seconds, with the result that menu items
+    are on the page but not clickable because they are obscured by the splash screen. Simply waiting for the
+    splash screen to appear and then disappear does the trick for this version. However, this does not work
+    for Blaise 5.2.5
+    """ 
+    try:
+        element.click()
+    except (
+        ElementClickInterceptedException, 
+        ElementNotInteractableException, 
+        ElementNotVisibleException) as e:
+
+        log(f"{e}: Element cannot be clicked")
+        return
+
+    while True:
+        try:
+            splash = driver.find_element_by_css_selector(".splash-active")
+            #print(f"Splash found. Visible: {splash.is_displayed()}")
+            break
+        except:
+            #print("splash not found")
+            pass
+        sleep(0.01)
+
+    while True:
+        try:
+            splash = driver.find_element_by_css_selector(".splash-active")
+            #print(f"Splash still found. Visible: {splash.is_displayed()}")
+        except:
+            #print("splash disappeared")
+            break
+        sleep(0.01)
+
+    
 
 def startup(browser_name = "firefox"):
     """
