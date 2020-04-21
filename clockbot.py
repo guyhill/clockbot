@@ -315,7 +315,13 @@ def navigate_next(driver):
     driver: webdriver instance. 
     """
     log("Navigating to next menu item")
+    
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    try: 
+        driver.execute_script(f"elt=document.getElementById('{id_scrollbar_item}');elt.scrollTo(0, elt.scrollHeight);")
+    except:
+        pass
+
     try:
         element = driver.find_element_by_css_selector(css_next_page_button)
     except:
